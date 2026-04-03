@@ -3,13 +3,12 @@
 # Exit on error, undefined variable, or pipe failure
 set -euo pipefail
 
-echo "🚀 Starting System-Agnostic Setup..."
+echo "🚀 Starting System-Agnostic Setup for {{ .chezmoi.os }}..."
 
-# --- 1. OS Detection & Installer Configuration ---
-# We define specific package names because they differ by OS (e.g. fd vs fd-find)
+# --- 1. Installer Configuration via Chezmoi Templates ---
 declare -A TOOLS
 
-# Default list
+# Default core tools
 TOOLS=(
     [git]="git"
     [zsh]="zsh"
@@ -19,117 +18,92 @@ TOOLS=(
     [unzip]="unzip"
 )
 
-# Detect OS
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS_ID=$ID
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    OS_ID="macos"
-else
-    echo "❌ Unsupported OS"
+{{ if eq .chezmoi.os "linux" -}}
+    {{ if eq .chezmoi.osRelease.id "arch" "manjaro" -}}
+    echo "🖥️  Detected OS: Arch/Manjaro"
+    INSTALL_CMD="sudo pacman -S --noconfirm"
+    TOOLS[ripgrep]="ripgrep"
+    TOOLS[gcc]="base-devel"
+    {{ else if eq .chezmoi.osRelease.id "ubuntu" "debian" "pop" -}}
+    echo "🖥️  Detected OS: Debian/Ubuntu"
+    sudo apt update
+    INSTALL_CMD="sudo apt install -y"
+    TOOLS[ripgrep]="ripgrep"
+    TOOLS[gcc]="build-essential"
+    {{ else if eq .chezmoi.osRelease.id "fedora" -}}
+    echo "🖥️  Detected OS: Fedora"
+    INSTALL_CMD="sudo dnf install -y"
+    TOOLS[ripgrep]="ripgrep"
+    TOOLS[gcc]="@development-tools"
+    {{ end -}}
+{{ else if eq .chezmoi.os "darwin" -}}
+    echo "🖥️  Detected OS: macOS"
+    if ! command -v brew &> /dev/null; then
+        echo "🍺 Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+    INSTALL_CMD="brew install"
+    TOOLS[ripgrep]="ripgrep"
+{{ else -}}
+    echo "❌ Unsupported OS: {{ .chezmoi.os }}"
     exit 1
-fi
-
-echo "🖥️  Detected OS: $OS_ID"
-
-# Configure Installer Command based on OS
-case "$OS_ID" in
-    "arch"|"manjaro")
-        INSTALL_CMD="sudo pacman -S --noconfirm"
-        TOOLS[ripgrep]="ripgrep"
-        TOOLS[gcc]="base-devel" # Group for compiling
-        ;;
-    "ubuntu"|"debian"|"pop")
-        # Update apt first
-        sudo apt update
-        INSTALL_CMD="sudo apt install -y"
-        TOOLS[ripgrep]="ripgrep"
-        TOOLS[gcc]="build-essential"
-        TOOLS[neovim]="neovim"
-        # Note: Ubuntu neovim is often old; you might need the snap or PPA,
-        # but for simplicity we stick to apt here.
-        ;;
-    "fedora")
-        INSTALL_CMD="sudo dnf install -y"
-        TOOLS[ripgrep]="ripgrep"
-        TOOLS[gcc]="@development-tools"
-        ;;
-    "macos")
-        if ! command -v brew &> /dev/null; then
-            echo "🍺 Installing Homebrew..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        fi
-        INSTALL_CMD="brew install"
-        TOOLS[ripgrep]="ripgrep"
-        ;;
-    *)
-        echo "⚠️  OS '$OS_ID' not fully supported manually. Exiting."
-        exit 1
-        ;;
-esac
+{{ end -}}
 
 # --- 2. Install Core Packages ---
 echo "📦 Installing packages with: $INSTALL_CMD"
-# Extract values from the dictionary and install
 for package in "${TOOLS[@]}"; do
     echo "   -> Installing $package..."
     $INSTALL_CMD "$package"
 done
 
-# --- 3. Install Ghostty (Handling Edge Cases) ---
-# Ghostty availability varies wildly right now.
+# --- 3. Install Ghostty ---
 echo "👻 Attempting to install Ghostty..."
-if [[ "$OS_ID" == "macos" ]]; then
-    brew install --cask ghostty || echo "⚠️  Ghostty cask install failed."
-elif [[ "$OS_ID" == "arch" ]]; then
-    $INSTALL_CMD ghostty || echo "⚠️  Ghostty not in repos yet."
-else
-    echo "⚠️  Ghostty is not in standard repos for $OS_ID yet. Please install manually or via Flatpak."
-fi
+{{ if eq .chezmoi.os "darwin" -}}
+    brew install --cask ghostty || echo "⚠️ Ghostty cask install failed."
+{{ else if and (eq .chezmoi.os "linux") (eq .chezmoi.osRelease.id "arch") -}}
+    sudo pacman -S --noconfirm ghostty || echo "⚠️ Ghostty not in repos yet."
+{{ else -}}
+    echo "⚠️ Ghostty is not in standard repos for {{ .chezmoi.os }} yet."
+{{ end -}}
 
 # --- 4. Install Mise (Version Manager) ---
 echo "🔧 Installing Mise (CLI version manager)..."
 if ! command -v mise &> /dev/null; then
     curl https://mise.run | sh
-    # Add to path temporarily for this script
     export PATH="$HOME/.local/bin:$PATH"
-    echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+    # Ensure it's in zshrc (chezmoi will manage the file, but this is a safety fallback)
+    grep -q 'mise activate zsh' ~/.zshrc || echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 else
     echo "   -> Mise already installed."
 fi
 
 # --- 5. Configure Languages (Go & Rust) ---
 echo "🦀 Setting up Go and Rust via Mise..."
-# We use 'mise install' which is idempotent (safe to run multiple times)
+export PATH="$HOME/.local/bin:$PATH"
+eval "$(mise activate bash)"
 mise use --global go@latest
 mise use --global rust@latest
-mise use --global node@latest # Often needed for Nvim plugins (Copilot, etc.)
+mise use --global node@latest
 
 # --- 6. Install Nerd Fonts ---
-# This part manually downloads a font to the correct user folder
 FONT_NAME="JetBrainsMono"
-echo "abc Installing $FONT_NAME Nerd Font..."
+echo "🔡 Installing $FONT_NAME Nerd Font..."
 
-if [[ "$OS_ID" == "macos" ]]; then
+{{ if eq .chezmoi.os "darwin" -}}
     FONT_DIR="$HOME/Library/Fonts"
-else
+{{ else -}}
     FONT_DIR="$HOME/.local/share/fonts"
-fi
+{{ end -}}
 
-# Only download if font doesn't exist to save bandwidth
 if [ ! -f "$FONT_DIR/${FONT_NAME}NerdFont-Regular.ttf" ]; then
     mkdir -p "$FONT_DIR"
-    # Download latest release from NerdFonts
     curl -fLo "$FONT_DIR/${FONT_NAME}.zip" \
         "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/${FONT_NAME}.zip"
-
     unzip -o "$FONT_DIR/${FONT_NAME}.zip" -d "$FONT_DIR"
     rm "$FONT_DIR/${FONT_NAME}.zip"
-
-    # Refresh font cache on Linux
-    if [[ "$OS_ID" != "macos" ]]; then
-        fc-cache -fv
-    fi
+    {{ if ne .chezmoi.os "darwin" -}}
+    fc-cache -fv
+    {{ end -}}
 else
     echo "   -> Fonts already detected."
 fi
@@ -137,8 +111,7 @@ fi
 # --- 7. Change Shell ---
 if [ "$SHELL" != "$(which zsh)" ]; then
     echo "🐚 Changing default shell to Zsh..."
-    # 'chsh' often requires password, so this might prompt the user
-    chsh -s "$(which zsh)"
+    sudo chsh -s "$(which zsh)" "$USER"
 fi
 
-echo "✅ Setup complete! Log out and back in."
+echo "✅ Setup complete! Restart your terminal."
