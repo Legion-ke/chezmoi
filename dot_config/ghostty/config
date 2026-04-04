@@ -1,34 +1,60 @@
-# Dynamic theme colors
-config-file = ?"~/.config/omarchy/current/theme/ghostty.conf"
+# ---------------------------------------------------------
+# GHOSTTY CONFIGURATION - FEDORA 43
+# ---------------------------------------------------------
 
-# Font
+# --- Font & Cursor ---
 font-family = "JetBrainsMono Nerd Font"
 font-style = Regular
 font-size = 15
-command = /usr/bin/zsh
-# Window
-window-theme = ghostty
-window-padding-x = 14
-window-padding-y = 14
-confirm-close-surface=false
-resize-overlay = never
-gtk-toolbar-style = flat
-
-# Cursor styling
 cursor-style = "block"
 cursor-style-blink = false
 
-# Cursor styling + SSH session terminfo
-# (all shell integration options must be passed together)
+# --- Window Appearance ---
+window-theme = ghostty
+window-decoration = false
+window-padding-x = 14
+window-padding-y = 14
+# Extends padding color to allow "grab and drag" area
+window-padding-color = extend
+confirm-close-surface = false
+resize-overlay = never
+gtk-toolbar-style = flat
+
+# --- Transparency & Blur ---
+# Note: 0.84 often plays nicer with GNOME fullscreen than 0.85
+background-opacity = 0.84
+background-blur = true
+# Helps maintain alpha channel context on Wayland
+window-inherit-working-directory = true
+
+# --- Window Behavior ---
+# Set to larger default size
+# initial-window-width = 1200
+# initial-window-height = 800
+window-save-state = default
+mouse-scroll-multiplier = 0.95
+
+# --- Shell Integration ---
+command = /usr/bin/zsh
 shell-integration-features = no-cursor,ssh-env
 
-# Keyboard bindings
+# --- Keyboard Bindings ---
+
+# Fullscreen & Window Control
+keybind = f11=toggle_fullscreen
+keybind = super+f=toggle_fullscreen
+keybind = super+m=toggle_maximize
+
+# Clipboard Operations
 keybind = shift+insert=paste_from_clipboard
 keybind = control+insert=copy_to_clipboard
+
+# Split Resizing
 keybind = super+control+shift+alt+arrow_down=resize_split:down,100
 keybind = super+control+shift+alt+arrow_up=resize_split:up,100
 keybind = super+control+shift+alt+arrow_left=resize_split:left,100
 keybind = super+control+shift+alt+arrow_right=resize_split:right,100
 
-# Slowdown mouse scrolling
-mouse-scroll-multiplier = 0.95
+# # Quick Transparency Adjustment (Live)
+# keybind = super+equal=background_opacity:+0.05
+# keybind = super+minus=background_opacity:-0.05
