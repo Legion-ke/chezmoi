@@ -143,14 +143,11 @@ alias ff="fzf --preview 'bat --style=numbers --color=always {}'"
 alias -s {json,md,txt,log}=bat
 alias -s {go,rs,py,js,ts}='nvim'
 
-alias devls="devpod list"
-# =========================================================================
-# 6. FUNCTIONS - SMART NAVIGATION & SEARCH
-# =========================================================================
 
-# Usage Examples:
-# devup                          -> Default (Go/Node/Python)
-# devup "Rust-Dev" "rust" "jq"   -> Creates 'Rust-Dev' with Rust and jq
+# --- DevPod Productivity Suite ---
+
+# 1. Spin Up / Update
+# Usage: devup "ProjectName" "langs" "tools"
 devup() {
     local name="${1:-Legion-Workspace}"
     local langs="${2:-node@latest python@3.12 go@latest}"
@@ -159,53 +156,61 @@ devup() {
 
     echo "🏗️  Building $name with $langs..."
 
-    # We use -e to inject the variables into the container environment
+    # --id sets the name in devpod list
     devpod up "$repo" \
       --ide none \
       --id "$name" \
       -e MISE_LANGS="$langs" \
       -e EXTRA_TOOLS="$tools"
 }
-# --- DevPod Management ---
 
-# Stop the workspace (Safe shutdown, keeps your installed tools/state)
-# Usage: 'devdown' or 'devdown ProjectName'
+# 2. Shutdown (Stop)
 devdown() {
     local name="${1:-Legion-Workspace}"
     echo "⏸️  Stopping DevPod workspace: $name"
     devpod stop "$name"
 }
 
-# Delete the workspace (Complete wipe, frees up disk space)
-# Usage: 'devdel' or 'devdel ProjectName'
+# 3. Destroy (Delete)
 devdel() {
-    local name="${1:-Legion-Workspace}"
-    echo "⚠️  Deleting DevPod workspace: $name"
-    devpod delete "$name"
+    # Get name from arg or fzf if arg is empty
+    local name=$1
+    if [ -z "$name" ]; then
+        name=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --prompt="⚠️  Delete Workspace: ")
+    fi
+
+    if [ -n "$name" ]; then
+        echo "🔥 Deleting DevPod workspace: $name"
+        devpod delete "$name"
+    fi
 }
 
-
-# Usage: 'devgo'
+# 4. Fuzzy-Jump (Standard)
 devgo() {
-    # 1. Get the list of running DevPod workspaces (skipping the header)
-    local workspace=$(devpod list --status running | awk 'NR>1 {print $1}' | fzf --height 40% --border --prompt="🚀 Select Workspace: ")
+    # Parses the table: skips 2 lines, splits by |, trims spaces
+    local workspace=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --height 40% --border --prompt="🚀 Select Workspace: ")
 
-    # 2. If a workspace was selected, jump in
     if [ -n "$workspace" ]; then
         echo "Opening Neovim in $workspace..."
-        # This command connects via SSH and immediately executes nvim in the workspace folder
+        # We run devpod start just in case it's stopped
+        devpod start "$workspace" --ide none > /dev/null 2>&1
         ssh -t "$workspace.devpod" "cd /workspace && nvim ."
     fi
 }
 
-
+# 5. Fuzzy-Jump (Tmux Window)
 devtmux() {
-    local workspace=$(devpod list --status running | awk 'NR>1 {print $1}' | fzf --prompt="🖥️  Tmux Workspace: ")
+    local workspace=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --prompt="🖥️  Tmux Workspace: ")
 
     if [ -n "$workspace" ]; then
+        devpod start "$workspace" --ide none > /dev/null 2>&1
         tmux new-window -n "$workspace" "ssh -t $workspace.devpod 'cd /workspace && nvim .'"
     fi
 }
+
+# 6. Quick List
+alias devls="devpod list"
+
 # Auto-ls on directory change
 chpwd() {
     emulate -L zsh
