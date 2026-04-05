@@ -145,30 +145,52 @@ alias -s {go,rs,py,js,ts}='nvim'
 
 
 # --- DevPod Productivity Suite ---
+#
 
-# 1. Spin Up / Update
+# Start a new DevBox with automatic folder creation
 devup() {
-    local name="${1:-devbox-default}"
+    local name="${1}"
+    if [ -z "$name" ]; then echo "❌ Usage: devup <project-name>"; return 1; fi
+
     local project_root="$HOME/projects/$name"
-    local env_repo="https://github.com/Legion-ke/my-dev-env"
+    local local_env="$HOME/projects/my-dev-env/.devcontainer/devcontainer.json"
 
+    # 1. Automatic Folder Creation
     if [ ! -d "$project_root/.devcontainer" ]; then
-        echo "📁 Setting up workspace structure..."
+        echo "📁 Creating workspace: $project_root"
         mkdir -p "$project_root/.devcontainer"
+    fi
 
-        # Download the actual config file into the folder
-        curl -sSL "https://raw.githubusercontent.com/Legion-ke/my-dev-env/main/.devcontainer/devcontainer.json" \
+    # 2. Force-copy the config from your local 'master' env repo
+    if [ -f "$local_env" ]; then
+        cp -f "$local_env" "$project_root/.devcontainer/devcontainer.json"
+    else
+        echo "📡 Local config missing, pulling from master branch..."
+        curl -fsSL "https://raw.githubusercontent.com/Legion-ke/my-dev-env/master/.devcontainer/devcontainer.json" \
              -o "$project_root/.devcontainer/devcontainer.json"
     fi
 
-    echo "🚀 Launching DevBox: $name"
+    # 3. Launch
     cd "$project_root"
-
-    # Force DevPod to use the folder we just created
     devpod up . --ide none --id "$name" --recreate
 }
 
-# 2. Shutdown (Stop)
+# Destroy a DevBox and its host folder
+devdel() {
+    local name="${1}"
+    if [ -z "$name" ]; then echo "❌ Usage: devdel <project-name>"; return 1; fi
+
+    echo "🔥 Destroying DevBox: $name..."
+    devpod delete "$name"
+
+    if [ -d "$HOME/projects/$name" ]; then
+        echo "🗑️  Removing host folder: ~/projects/$name"
+        rm -rf "$HOME/projects/$name"
+    fi
+    echo "✅ Cleaned up."
+}
+
+## 2. Shutdown (Stop)
 devdown() {
     local name="${1:-Legion-Workspace}"
     echo "⏸️  Stopping DevPod workspace: $name"
@@ -189,17 +211,7 @@ devdel() {
     fi
 }
 
-# 4. Fuzzy-Jump (Standard)
-devgo() {
-    local workspace=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --height 40% --border --prompt="🚀 Select Workspace: ")
 
-    if [ -n "$workspace" ]; then
-        echo "Opening Neovim in $workspace..."
-        devpod start "$workspace" --ide none > /dev/null 2>&1
-        # Use the specific workspace subfolder
-        ssh -t "$workspace.devpod" "cd /workspaces/$workspace && (command -v nvim >/dev/null && nvim . || zsh)"
-    fi
-}
 
 # 5. Fuzzy-Jump (Tmux Window)
 devtmux() {
