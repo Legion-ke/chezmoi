@@ -147,6 +147,42 @@ alias -s {go,rs,py,js,ts}='nvim'
 # 6. FUNCTIONS - SMART NAVIGATION & SEARCH
 # =========================================================================
 
+# Usage Examples:
+# devup                          -> Default (Go/Node/Python)
+# devup "Rust-Dev" "rust" "jq"   -> Creates 'Rust-Dev' with Rust and jq
+devup() {
+    local name="${1:-Legion-Workspace}"
+    local langs="${2:-node@latest python@3.12 go@latest}"
+    local tools="${3:-tmux ripgrep fzf bat}"
+    local repo="https://github.com/Legion-ke/my-dev-env"
+
+    echo "🏗️  Building $name with $langs..."
+
+    # We use -e to inject the variables into the container environment
+    devpod up "$repo" \
+      --ide none \
+      --id "$name" \
+      -e MISE_LANGS="$langs" \
+      -e EXTRA_TOOLS="$tools"
+}
+# --- DevPod Management ---
+
+# Stop the workspace (Safe shutdown, keeps your installed tools/state)
+# Usage: 'devdown' or 'devdown ProjectName'
+devdown() {
+    local name="${1:-Legion-Workspace}"
+    echo "⏸️  Stopping DevPod workspace: $name"
+    devpod stop "$name"
+}
+
+# Delete the workspace (Complete wipe, frees up disk space)
+# Usage: 'devdel' or 'devdel ProjectName'
+devdel() {
+    local name="${1:-Legion-Workspace}"
+    echo "⚠️  Deleting DevPod workspace: $name"
+    devpod delete "$name"
+}
+
 # Auto-ls on directory change
 chpwd() {
     emulate -L zsh
