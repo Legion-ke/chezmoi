@@ -1,11 +1,30 @@
 #!/bin/bash
-# Soft pipefail — keeps -u and pipefail but network failures won't abort everything
 set -uo pipefail
 
 echo "🚀 Starting Dev Environment Setup..."
 
 # ─────────────────────────────────────────────
-# 1. Detect OS & Install Core Packages
+# HELPERS
+# ─────────────────────────────────────────────
+is_devcontainer() {
+    [ -n "${REMOTE_CONTAINERS:-}" ] || [ -n "${DEVPOD:-}" ] || [ -n "${CODESPACES:-}" ]
+}
+
+safe_run() {
+    # Runs a function in an isolated subshell — failures never abort the parent
+    local label="$1"
+    local fn="$2"
+    echo ""
+    echo "── $label ──────────────────────────────"
+    (
+        set +e
+        $fn
+    )
+    echo "── done: $label"
+}
+
+# ─────────────────────────────────────────────
+# 1. Core Packages (fast + reliable, keep -e)
 # ─────────────────────────────────────────────
 install_packages() {
     if command -v apt-get &>/dev/null; then
@@ -19,102 +38,130 @@ install_packages() {
             nodejs npm \
             xclip xsel
 
-        # eza — not in apt, install via binary
-        if ! command -v eza &>/dev/null; then
-            echo "📦 Installing eza..."
-            curl -Lo /tmp/eza.tar.gz \
-                "https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz"
-            tar -xzf /tmp/eza.tar.gz -C /tmp
-            sudo mv /tmp/eza /usr/local/bin/eza
-            rm -f /tmp/eza.tar.gz
-        fi
-
-        # zoxide — not in apt, install via script
-        if ! command -v zoxide &>/dev/null; then
-            echo "📦 Installing zoxide..."
-            curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
-        fi
-
     elif command -v dnf &>/dev/null; then
         echo "📦 Detected dnf (Fedora/RHEL)"
         sudo dnf install -y \
             git zsh tmux neovim curl unzip \
             ripgrep eza bat fd-find fzf zoxide \
-            wl-clipboard \
-            gcc make cmake gcc-c++ \
-            python3 python3-pip \
-            nodejs npm
+            wl-clipboard gcc make cmake gcc-c++ \
+            python3 python3-pip nodejs npm
 
     elif command -v pacman &>/dev/null; then
         echo "📦 Detected pacman (Arch)"
         sudo pacman -Sy --noconfirm \
             git zsh tmux neovim curl unzip \
             ripgrep eza bat fd fzf zoxide \
-            wl-clipboard \
-            gcc make cmake \
-            python python-pip \
-            nodejs npm
+            wl-clipboard gcc make cmake \
+            python python-pip nodejs npm
 
     elif command -v brew &>/dev/null; then
         echo "📦 Detected brew (macOS)"
         brew install \
             git zsh tmux neovim curl unzip \
             ripgrep eza bat fd fzf zoxide \
-            gcc make cmake \
-            python node
+            gcc make cmake python node
 
     else
         echo "⚠️  No supported package manager found — skipping core packages"
     fi
 }
 
-install_packages
+# ─────────────────────────────────────────────
+# 2. eza (apt systems only — binary install)
+# ─────────────────────────────────────────────
+install_eza() {
+    if ! command -v apt-get &>/dev/null; then return 0; fi  # dnf/brew handle it natively
+    if command -v eza &>/dev/null; then echo "✅ eza already installed"; return 0; fi
+
+    echo "📦 Installing eza..."
+    curl -Lo /tmp/eza.tar.gz \
+        "https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz"
+    tar -xzf /tmp/eza.tar.gz -C /tmp
+    sudo mv /tmp/eza /usr/local/bin/eza
+    rm -f /tmp/eza.tar.gz
+    echo "✅ eza installed"
+}
 
 # ─────────────────────────────────────────────
-# 2. Oh My Zsh
+# 3. zoxide (apt systems only — script install)
 # ─────────────────────────────────────────────
-if [ ! -d "$HOME/.oh-my-zsh" ]; then
+install_zoxide() {
+    if ! command -v apt-get &>/dev/null; then return 0; fi
+    if command -v zoxide &>/dev/null; then echo "✅ zoxide already installed"; return 0; fi
+
+    echo "📦 Installing zoxide..."
+    curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+    echo "✅ zoxide installed"
+}
+
+# ─────────────────────────────────────────────
+# 4. Oh My Zsh
+# ─────────────────────────────────────────────
+install_omz() {
+    if [ -d "$HOME/.oh-my-zsh" ]; then echo "✅ Oh My Zsh already installed"; return 0; fi
+
     echo "🐚 Installing Oh My Zsh..."
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-fi
+    echo "✅ Oh My Zsh installed"
+}
 
 # ─────────────────────────────────────────────
-# 3. ZSH Plugins
+# 5. ZSH Plugins
 # ─────────────────────────────────────────────
-ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+install_zsh_plugins() {
+    ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
-if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
-    echo "🔌 Installing zsh-autosuggestions..."
-    git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
-fi
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]; then
+        echo "🔌 Installing zsh-autosuggestions..."
+        git clone https://github.com/zsh-users/zsh-autosuggestions \
+            "$ZSH_CUSTOM/plugins/zsh-autosuggestions" \
+            && echo "✅ zsh-autosuggestions installed" \
+            || echo "⚠️  zsh-autosuggestions failed"
+    else
+        echo "✅ zsh-autosuggestions already installed"
+    fi
 
-if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
-    echo "🔌 Installing zsh-syntax-highlighting..."
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-fi
+    if [ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]; then
+        echo "🔌 Installing zsh-syntax-highlighting..."
+        git clone https://github.com/zsh-users/zsh-syntax-highlighting \
+            "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" \
+            && echo "✅ zsh-syntax-highlighting installed" \
+            || echo "⚠️  zsh-syntax-highlighting failed"
+    else
+        echo "✅ zsh-syntax-highlighting already installed"
+    fi
+}
 
 # ─────────────────────────────────────────────
-# 4. Starship
+# 6. Starship
 # ─────────────────────────────────────────────
-if ! command -v starship &>/dev/null; then
+install_starship() {
+    if command -v starship &>/dev/null; then echo "✅ Starship already installed"; return 0; fi
+
     echo "🚀 Installing Starship..."
-    curl -sS https://starship.rs/install.sh | sh -s -- --yes
-fi
+    curl -sS https://starship.rs/install.sh | sh -s -- --yes \
+        && echo "✅ Starship installed" \
+        || echo "⚠️  Starship install failed — run: curl -sS https://starship.rs/install.sh | sh"
+}
 
 # ─────────────────────────────────────────────
-# 5. Mise
+# 7. Mise
 # ─────────────────────────────────────────────
-if ! command -v mise &>/dev/null; then
+install_mise() {
+    if command -v mise &>/dev/null; then echo "✅ Mise already installed"; return 0; fi
+
     echo "🔧 Installing Mise..."
-    curl https://mise.run | sh
-fi
-
-export PATH="$HOME/.local/bin:$PATH"
+    curl https://mise.run | sh \
+        && echo "✅ Mise installed" \
+        || echo "⚠️  Mise install failed — run: curl https://mise.run | sh"
+}
 
 # ─────────────────────────────────────────────
-# 6. Languages via Mise (non-fatal, with timeout)
+# 8. Languages via Mise
 # ─────────────────────────────────────────────
 install_mise_languages() {
+    export PATH="$HOME/.local/bin:$PATH"
+
     if ! command -v mise &>/dev/null; then
         echo "⚠️  mise not found — skipping language installs"
         return 0
@@ -123,57 +170,96 @@ install_mise_languages() {
     eval "$(mise activate bash)" 2>/dev/null || true
 
     for lang in go rust node; do
-        if mise current "$lang" &>/dev/null; then
-            echo "✅ $lang already installed: $(mise current $lang)"
+        if mise ls --installed "$lang" 2>/dev/null | grep -q "$lang"; then
+            echo "✅ $lang already installed"
         else
             echo "📦 Installing $lang via mise..."
             MISE_FETCH_TIMEOUT_SECS=60 mise use --global "${lang}@latest" \
                 && echo "✅ $lang installed" \
-                || echo "⚠️  $lang install failed — run 'mise use --global ${lang}@latest' manually"
+                || echo "⚠️  $lang failed — run: mise use --global ${lang}@latest"
         fi
     done
 }
 
-# Run in subshell so a timeout/failure never aborts the parent script
-(
-    set +e
-    install_mise_languages
-)
-
 # ─────────────────────────────────────────────
-# 7. JetBrainsMono Nerd Font
+# 9. JetBrainsMono Nerd Font
 # ─────────────────────────────────────────────
-if [[ "$(uname)" == "Darwin" ]]; then
-    if ! brew list --cask font-jetbrains-mono-nerd-font &>/dev/null; then
-        echo "🔡 Installing JetBrainsMono Nerd Font via brew..."
-        brew tap homebrew/cask-fonts 2>/dev/null || true
-        brew install --cask font-jetbrains-mono-nerd-font
+install_font() {
+    # Fonts are pointless in a headless devcontainer
+    if is_devcontainer; then
+        echo "🖥️  DevContainer — skipping font install (no display server)"
+        return 0
     fi
-else
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        if ! brew list --cask font-jetbrains-mono-nerd-font &>/dev/null; then
+            echo "🔡 Installing JetBrainsMono via brew..."
+            brew tap homebrew/cask-fonts 2>/dev/null || true
+            brew install --cask font-jetbrains-mono-nerd-font \
+                && echo "✅ Font installed" \
+                || echo "⚠️  Font install failed"
+        else
+            echo "✅ JetBrainsMono already installed"
+        fi
+        return 0
+    fi
+
     FONT_DIR="$HOME/.local/share/fonts"
-    FONT_NAME="JetBrainsMono"
-    if [ ! -f "$FONT_DIR/${FONT_NAME}NerdFont-Regular.ttf" ]; then
-        echo "🔡 Installing $FONT_NAME Nerd Font..."
-        mkdir -p "$FONT_DIR"
-        curl -fLo "$FONT_DIR/${FONT_NAME}.zip" \
-            "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/${FONT_NAME}.zip" \
-            && unzip -o "$FONT_DIR/${FONT_NAME}.zip" -d "$FONT_DIR" \
-            && rm "$FONT_DIR/${FONT_NAME}.zip" \
-            && fc-cache -fv \
-            || echo "⚠️  Font install failed — skipping"
+    FONT_BASE="https://github.com/ryanoasis/nerd-fonts/raw/HEAD/patched-fonts/JetBrainsMono/Ligatures"
+
+    if [ -f "$FONT_DIR/JetBrainsMonoNerdFont-Regular.ttf" ]; then
+        echo "✅ JetBrainsMono already installed"
+        return 0
     fi
-fi
+
+    echo "🔡 Installing JetBrainsMono Nerd Font (individual TTFs)..."
+    mkdir -p "$FONT_DIR"
+
+    # Individual TTFs (~3MB) instead of the full zip (~250MB)
+    for variant in Regular Bold Italic BoldItalic; do
+        curl -fLo "$FONT_DIR/JetBrainsMonoNerdFont-${variant}.ttf" \
+            "${FONT_BASE}/${variant}/JetBrainsMonoNerdFont-${variant}.ttf" \
+            && echo "  ✅ $variant" \
+            || echo "  ⚠️  $variant failed — skipping"
+    done
+
+    fc-cache -fv && echo "✅ Font cache updated" \
+        || echo "⚠️  fc-cache failed"
+}
 
 # ─────────────────────────────────────────────
-# 8. Change Shell to Zsh
+# 10. Change Shell to Zsh
 # ─────────────────────────────────────────────
-if [ "$SHELL" != "$(command -v zsh)" ]; then
+set_zsh_shell() {
+    if [ "$SHELL" = "$(command -v zsh)" ]; then
+        echo "✅ Zsh is already the default shell"
+        return 0
+    fi
+
     echo "🐚 Changing default shell to Zsh..."
     sudo chsh -s "$(command -v zsh)" "$USER" \
-        || echo "⚠️  Could not change shell — run: chsh -s \$(which zsh)"
-fi
+        && echo "✅ Shell changed to Zsh" \
+        || echo "⚠️  chsh failed — run: chsh -s \$(which zsh)"
+}
 
+# ─────────────────────────────────────────────
+# RUN — core packages run normally (fail-fast)
+#        everything network-heavy runs isolated
+# ─────────────────────────────────────────────
+install_packages                        # fast + local — keep fail-fast
+
+safe_run "eza"                  install_eza
+safe_run "zoxide"               install_zoxide
+safe_run "Oh My Zsh"            install_omz
+safe_run "ZSH plugins"          install_zsh_plugins
+safe_run "Starship"             install_starship
+safe_run "Mise"                 install_mise
+safe_run "Languages (mise)"     install_mise_languages
+safe_run "Nerd Font"            install_font
+safe_run "Default shell"        set_zsh_shell
+
+# ─────────────────────────────────────────────
 echo ""
 echo "✅ Setup complete!"
-echo "   If any language installs failed, run: mise use --global <lang>@latest"
-echo "   Restart your terminal (or run: exec zsh) to apply all changes."
+echo "   Anything that failed can be retried individually."
+echo "   Restart your terminal or run: exec zsh"
