@@ -190,14 +190,13 @@ devdel() {
 
 # 4. Fuzzy-Jump (Standard)
 devgo() {
-    # Parses the table: skips 2 lines, splits by |, trims spaces
     local workspace=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --height 40% --border --prompt="🚀 Select Workspace: ")
 
     if [ -n "$workspace" ]; then
         echo "Opening Neovim in $workspace..."
-        # We run devpod start just in case it's stopped
         devpod start "$workspace" --ide none > /dev/null 2>&1
-        ssh -t "$workspace.devpod" "cd /workspace && nvim ."
+        # Use the specific workspace subfolder
+        ssh -t "$workspace.devpod" "cd /workspaces/$workspace && (command -v nvim >/dev/null && nvim . || zsh)"
     fi
 }
 
