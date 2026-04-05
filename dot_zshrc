@@ -154,16 +154,19 @@ devup() {
     local tools="${3:-tmux ripgrep fzf bat}"
     local repo="https://github.com/Legion-ke/my-dev-env"
 
-    echo "🏗️  Building $name with $langs..."
+    export MISE_LANGS="$langs"
+    export EXTRA_TOOLS="$tools"
 
-    # --id sets the name in devpod list
-    devpod up "$repo" \
-      --ide none \
-      --id "$name" \
-      -e MISE_LANGS="$langs" \
-      -e EXTRA_TOOLS="$tools"
+    # Check if a directory with this name exists in your current path
+    if [ -d "$name" ]; then
+        echo "📂 Found local directory '$name'. Using it as workspace source..."
+        cd "$name"
+        devpod up . --id "$name" --ide none
+    else
+        echo "🌐 No local folder found. Provisioning new volume from $repo..."
+        devpod up "$repo" --id "$name" --ide none
+    fi
 }
-
 # 2. Shutdown (Stop)
 devdown() {
     local name="${1:-Legion-Workspace}"
