@@ -143,6 +143,7 @@ alias ff="fzf --preview 'bat --style=numbers --color=always {}'"
 alias -s {json,md,txt,log}=bat
 alias -s {go,rs,py,js,ts}='nvim'
 
+alias devls="devpod list"
 # =========================================================================
 # 6. FUNCTIONS - SMART NAVIGATION & SEARCH
 # =========================================================================
@@ -183,6 +184,28 @@ devdel() {
     devpod delete "$name"
 }
 
+
+# Usage: 'devgo'
+devgo() {
+    # 1. Get the list of running DevPod workspaces (skipping the header)
+    local workspace=$(devpod list --status running | awk 'NR>1 {print $1}' | fzf --height 40% --border --prompt="🚀 Select Workspace: ")
+
+    # 2. If a workspace was selected, jump in
+    if [ -n "$workspace" ]; then
+        echo "Opening Neovim in $workspace..."
+        # This command connects via SSH and immediately executes nvim in the workspace folder
+        ssh -t "$workspace.devpod" "cd /workspace && nvim ."
+    fi
+}
+
+
+devtmux() {
+    local workspace=$(devpod list --status running | awk 'NR>1 {print $1}' | fzf --prompt="🖥️  Tmux Workspace: ")
+
+    if [ -n "$workspace" ]; then
+        tmux new-window -n "$workspace" "ssh -t $workspace.devpod 'cd /workspace && nvim .'"
+    fi
+}
 # Auto-ls on directory change
 chpwd() {
     emulate -L zsh
