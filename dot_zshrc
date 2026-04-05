@@ -105,8 +105,7 @@ for index ({1..9}) alias "$index"="cd +${index}"; unset index
 
 # Neovim Shortcut
 alias n='nvim'
-alias zed='zeditor'
-alias z.='zeditor .'
+alias zd='zed .'
 
 # =========================================================================
 # 5. ALIASES - DEVELOPMENT & TOOLS
@@ -352,3 +351,4 @@ if [[ -o interactive && -z "$TMUX" ]]; then
         tmux attach-session -t "$USER" || tmux new-session -s "$USER"
     fi
 fi
+[ -f ~/.secrets/github ] && source ~/.secrets/github
