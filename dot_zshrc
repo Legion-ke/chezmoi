@@ -147,26 +147,27 @@ alias -s {go,rs,py,js,ts}='nvim'
 # --- DevPod Productivity Suite ---
 
 # 1. Spin Up / Update
-# Usage: devup "ProjectName" "langs" "tools"
 devup() {
-    local name="${1:-Legion-Workspace}"
-    local langs="${2:-node@latest python@3.12 go@latest}"
-    local tools="${3:-tmux ripgrep fzf bat}"
-    local repo="https://github.com/Legion-ke/my-dev-env"
+    local name="${1:-devbox-default}"
+    local project_root="$HOME/projects/$name"
+    local env_repo="https://github.com/Legion-ke/my-dev-env"
 
-    export MISE_LANGS="$langs"
-    export EXTRA_TOOLS="$tools"
+    if [ ! -d "$project_root/.devcontainer" ]; then
+        echo "📁 Setting up workspace structure..."
+        mkdir -p "$project_root/.devcontainer"
 
-    # Check if a directory with this name exists in your current path
-    if [ -d "$name" ]; then
-        echo "📂 Found local directory '$name'. Using it as workspace source..."
-        cd "$name"
-        devpod up . --id "$name" --ide none
-    else
-        echo "🌐 No local folder found. Provisioning new volume from $repo..."
-        devpod up "$repo" --id "$name" --ide none
+        # Download the actual config file into the folder
+        curl -sSL "https://raw.githubusercontent.com/Legion-ke/my-dev-env/main/.devcontainer/devcontainer.json" \
+             -o "$project_root/.devcontainer/devcontainer.json"
     fi
+
+    echo "🚀 Launching DevBox: $name"
+    cd "$project_root"
+
+    # Force DevPod to use the folder we just created
+    devpod up . --ide none --id "$name" --recreate
 }
+
 # 2. Shutdown (Stop)
 devdown() {
     local name="${1:-Legion-Workspace}"
