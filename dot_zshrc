@@ -143,26 +143,41 @@ alias ff="fzf --preview 'bat --style=numbers --color=always {}'"
 alias -s {json,md,txt,log}=bat
 alias -s {go,rs,py,js,ts}='nvim'
 
-
 # --- DevPod Productivity Suite ---
-#
 
-# Start a new DevBox with automatic folder creation
+# Shared helper: pick a workspace interactively
+_devpod_pick() {
+    local prompt="${1:-🖥️  Select Workspace: }"
+    devpod list | sed '1,2d' | awk -F'|' '{print $1}' \
+        | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+        | fzf --prompt="$prompt"
+}
+
+# 1. Start / Create a DevBox
 devup() {
     local name="${1}"
-    if [ -z "$name" ]; then echo "❌ Usage: devup <project-name>"; return 1; fi
+
+    # No arg → fuzzy-resume an existing workspace
+    if [ -z "$name" ]; then
+        name=$(_devpod_pick "🚀 Resume Workspace: ")
+        if [ -z "$name" ]; then echo "❌ Nothing selected."; return 1; fi
+        echo "▶️  Resuming DevBox: $name"
+        devpod up "$name" --ide none
+        return
+    fi
 
     local project_root="$HOME/projects/$name"
     local local_env="$HOME/projects/my-dev-env/.devcontainer/devcontainer.json"
 
-    # 1. Automatic Folder Creation
+    # Auto-create folder structure
     if [ ! -d "$project_root/.devcontainer" ]; then
         echo "📁 Creating workspace: $project_root"
         mkdir -p "$project_root/.devcontainer"
     fi
 
-    # 2. Force-copy the config from your local 'master' env repo
+    # Copy or fetch devcontainer.json
     if [ -f "$local_env" ]; then
+        echo "🏠 Using local config from my-dev-env..."
         cp -f "$local_env" "$project_root/.devcontainer/devcontainer.json"
     else
         echo "📡 Local config missing, pulling from master branch..."
@@ -170,60 +185,76 @@ devup() {
              -o "$project_root/.devcontainer/devcontainer.json"
     fi
 
-    # 3. Launch
+    echo "🚀 Launching DevBox: $name"
     cd "$project_root"
-    devpod up . --ide none --id "$name" --recreate
+    devpod up . --ide none --id "$name"  # removed --recreate
 }
 
-# Destroy a DevBox and its host folder
+# 2. Stop a DevBox
+devdown() {
+    local name="${1}"
+
+    # No arg → fuzzy pick
+    if [ -z "$name" ]; then
+        name=$(_devpod_pick "⏸️  Stop Workspace: ")
+        if [ -z "$name" ]; then echo "❌ Nothing selected."; return 1; fi
+    fi
+
+    echo "⏸️  Stopping DevBox: $name"
+    devpod stop "$name"
+}
+
+# 3. Delete a DevBox (with optional host folder cleanup)
 devdel() {
     local name="${1}"
-    if [ -z "$name" ]; then echo "❌ Usage: devdel <project-name>"; return 1; fi
+
+    # No arg → fuzzy pick
+    if [ -z "$name" ]; then
+        name=$(_devpod_pick "⚠️  Delete Workspace: ")
+        if [ -z "$name" ]; then echo "❌ Nothing selected."; return 1; fi
+    fi
 
     echo "🔥 Destroying DevBox: $name..."
     devpod delete "$name"
 
-    if [ -d "$HOME/projects/$name" ]; then
+    # Clean up host folder if it exists
+    local project_root="$HOME/projects/$name"
+    if [ -d "$project_root" ]; then
         echo "🗑️  Removing host folder: ~/projects/$name"
-        rm -rf "$HOME/projects/$name"
+        rm -rf "$project_root"
     fi
+
     echo "✅ Cleaned up."
 }
 
-## 2. Shutdown (Stop)
-devdown() {
-    local name="${1:-Legion-Workspace}"
-    echo "⏸️  Stopping DevPod workspace: $name"
-    devpod stop "$name"
-}
+# 4. SSH into a DevBox
+devssh() {
+    local name="${1}"
 
-# 3. Destroy (Delete)
-devdel() {
-    # Get name from arg or fzf if arg is empty
-    local name=$1
     if [ -z "$name" ]; then
-        name=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --prompt="⚠️  Delete Workspace: ")
+        name=$(_devpod_pick "🔌 SSH into Workspace: ")
+        if [ -z "$name" ]; then echo "❌ Nothing selected."; return 1; fi
     fi
 
-    if [ -n "$name" ]; then
-        echo "🔥 Deleting DevPod workspace: $name"
-        devpod delete "$name"
-    fi
+    devpod up "$name" --ide none > /dev/null 2>&1
+    devpod ssh "$name"  # uses devpod's own ssh — no alias required
 }
 
-
-
-# 5. Fuzzy-Jump (Tmux Window)
+# 5. Open a DevBox in a new tmux window
 devtmux() {
-    local workspace=$(devpod list | sed '1,2d' | awk -F'|' '{print $1}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | fzf --prompt="🖥️  Tmux Workspace: ")
+    local name="${1}"
 
-    if [ -n "$workspace" ]; then
-        devpod start "$workspace" --ide none > /dev/null 2>&1
-        tmux new-window -n "$workspace" "ssh -t $workspace.devpod 'cd /workspace && nvim .'"
+    if [ -z "$name" ]; then
+        name=$(_devpod_pick "🖥️  Tmux into Workspace: ")
+        if [ -z "$name" ]; then echo "❌ Nothing selected."; return 1; fi
     fi
+
+    echo "🖥️  Opening $name in tmux..."
+    devpod up "$name" --ide none > /dev/null 2>&1
+    tmux new-window -n "$name" "devpod ssh $name"
 }
 
-# 6. Quick List
+# 6. Quick list
 alias devls="devpod list"
 
 # Auto-ls on directory change
